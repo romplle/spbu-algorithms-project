@@ -21,18 +21,20 @@ def get_customs_fee(value_rub):
         return 30_000
 
 
-def calculate_critical_rate(P, K0, C_delivery, T_delivery, tax, customs_fee, n, T):
+def calculate_critical_rate(K0, P, C_delivery, T_delivery, tax, customs_fee, n, T):
     """
     Вычисляет критическую банковскую ставку r_кр, при которой сделка безубыточна.
     
-    P - стоимость продажи сервера ($)
     K0 - начальная стоимость сервера ($)
+    P - стоимость продажи сервера ($)
     C_delivery - стоимость доставки ($)
     T_delivery - время доставки
     n - количество начислений процентов в год (по умолчанию 1)
     T - время до продажи в годах
     """
+
     C_dop = C_delivery + ((P + C_delivery) * tax) + customs_fee
+    # print(C_dop)
     if P <= C_dop:  # Проверка на возможность прибыли
         return None  # Если выручка не покрывает затраты, смысла нет
     
@@ -41,29 +43,33 @@ def calculate_critical_rate(P, K0, C_delivery, T_delivery, tax, customs_fee, n, 
 
 def monte_carlo_simulation(n_simulations=100000):
     # Фиксированные параметры
-    P = 5000          # Стоимость продажи сервера ($)
     K0 = 3000         # Начальная стоимость сервера ($)
+    P = 400_000       # Стоимость продажи сервера (₽)
     C_aviation = 120  # Стоимость авиадоставки ($)
     C_sea = 50        # Стоимость морской доставки ($)
     n = 12            # Начисление процентов раз в год
     tax = 0.2         # Налог
     T = 0.5           # Время до продажи в годах
-    
-    # Диапазон случайных сроков доставки
-    sea_weeks_min, sea_weeks_max = 8, 16
-    avia_weeks_min, avia_weeks_max = 1, 3
 
+    # Средний курс 87.5 руб., стандартное отклонение 5 руб.
+    usd_rate_first = np.random.normal(loc=87.5, scale=2.5)
+    usd_rate_second = np.random.normal(loc=87.5, scale=2.5)
+
+    K0 *= usd_rate_first
+    C_aviation *= usd_rate_second
+    C_sea *= usd_rate_second
+    
     critical_rates_avia = []
     critical_rates_sea = []
     
     for _ in range(n_simulations):
-        T_aviation = np.random.uniform(avia_weeks_min, avia_weeks_max) / 52
-        T_sea = np.random.uniform(sea_weeks_min, sea_weeks_max) / 52
+        T_aviation = np.random.normal(loc=2, scale=0.5) / 52  # Среднее 2 недели, стандартное отклонение 0.5 недели
+        T_sea = np.random.normal(loc=12, scale=2) / 52        # Среднее 12 недель, стандартное отклонение 2 недели
         
-        customs_fee = get_customs_fee(P * 90) / 90
+        customs_fee = get_customs_fee(P)
         
-        r_crit_avia = calculate_critical_rate(P, K0, C_aviation, T_aviation, tax, customs_fee, n, T)
-        r_crit_sea = calculate_critical_rate(P, K0, C_sea, T_sea, tax, customs_fee, n, T)
+        r_crit_avia = calculate_critical_rate(K0, P, C_aviation, T_aviation, tax, customs_fee, n, T)
+        r_crit_sea = calculate_critical_rate(K0, P, C_sea, T_sea, tax, customs_fee, n, T)
         
         if r_crit_avia is not None and 0 < r_crit_avia < 1:
             critical_rates_avia.append(r_crit_avia)
