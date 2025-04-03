@@ -43,17 +43,20 @@ def calculate_critical_rate(K0, P, C_delivery, T_delivery, tax, customs_fee, n, 
 
 def monte_carlo_simulation(n_simulations=100000):
     # Фиксированные параметры
-    K0 = 3000         # Начальная стоимость сервера ($)
-    P = 400_000       # Стоимость продажи сервера (₽)
-    C_aviation = 120  # Стоимость авиадоставки ($)
-    C_sea = 50        # Стоимость морской доставки ($)
-    n = 12            # Начисление процентов раз в год
-    tax = 0.2         # Налог
-    T = 0.5           # Время до продажи в годах
+    K0 = 3000           # Начальная стоимость сервера ($)
+    P = 400_000         # Стоимость продажи сервера (₽)
+    C_aviation = 120    # Стоимость авиадоставки ($)
+    C_sea = 50          # Стоимость морской доставки ($)
+    n = 12              # Начисление процентов раз в год
+    tax = 0.2           # Налог
+    T = 0.5             # Время до продажи в годах
+    usd_rate_now = 87.5 # Курс доллар в данный момент (₽)
 
-    # Средний курс 87.5 руб., стандартное отклонение 5 руб.
-    usd_rate_first = np.random.normal(loc=87.5, scale=2.5)
-    usd_rate_second = np.random.normal(loc=87.5, scale=2.5)
+    usd_rate_first = np.random.normal(loc=usd_rate_now, scale=2.5)
+    usd_rate_second = np.random.normal(loc=usd_rate_now, scale=2.5)
+
+    # usd_rate_first = np.random.uniform(85, 92.5)
+    # usd_rate_second = np.random.uniform(85, 92.5)
 
     K0 *= usd_rate_first
     C_aviation *= usd_rate_second
