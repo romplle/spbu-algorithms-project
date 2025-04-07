@@ -21,36 +21,82 @@ def get_customs_fee(value_rub):
         return 30_000
 
 
-def calculate_critical_rate(K0, P, C_delivery, T_delivery, tax, customs_fee, n, T):
+def calculate_critical_rate(buying_price, selling_price, delivery_price, delivery_time, tax_scheme, n, T):
     """
     Вычисляет критическую банковскую ставку r_кр, при которой сделка безубыточна.
     
-    K0 - начальная стоимость сервера ($)
-    P - стоимость продажи сервера ($)
-    C_delivery - стоимость доставки ($)
-    T_delivery - время доставки
-    n - количество начислений процентов в год (по умолчанию 1)
+    buying_price - начальная стоимость сервера (₽)
+    selling_price - стоимость продажи сервера (₽)
+    delivery_price - стоимость доставки (₽)
+    delivery_time - время доставки
+    tax_scheme - система налогообложения
+    n - количество начислений процентов в год (по умолчанию 12)
     T - время до продажи в годах
     """
 
-    C_dop = C_delivery + ((P + C_delivery) * tax) + customs_fee
-    # print(C_dop)
-    if P <= C_dop:  # Проверка на возможность прибыли
-        return None  # Если выручка не покрывает затраты, смысла нет
+    customs_fee = get_customs_fee(buying_price + delivery_price)
+
+    customs_tax = (buying_price + delivery_price + customs_fee) * 0.20
+    total_cost = buying_price + delivery_price + customs_tax
+
+    tax = calculate_tax(selling_price, tax_scheme, customs_tax, total_cost)
+    # print("tax", tax, " customs_tax", customs_tax)
+    # quit()
+
+    additional_costs = delivery_price + tax
+
+    # Проверка на возможность прибыли
+    if selling_price <= additional_costs:
+        return None
     
-    return n * (((P - C_dop) / K0) ** (1 / (n * (T + T_delivery / 12))) - 1)
+    return n * (((selling_price - additional_costs) / buying_price) ** (1 / (n * (T + delivery_time / 12))) - 1)
 
 
-def monte_carlo_simulation(n_simulations=100000):
+def calculate_tax(selling_price, tax_scheme, customs_tax, total_cost):
+    """
+    Расчёт налогов
+    
+    selling_price - стоимость продажи сервера (₽)
+    tax_scheme - система налогообложения
+    customs_tax - таможенный НДС (₽)
+    total_cost - стоимость сервера + стоимость доставки + таможенный НДС (₽)
+    """
+    
+    if tax_scheme == "INDIVIDUAL":
+        profit_tax = max(0, selling_price - total_cost * 0.13)
+        return customs_tax + profit_tax
+    
+    elif tax_scheme == "OSNO":
+        customs_tax_payable  = max(0, selling_price * 0.20 - customs_tax)
+        profit_tax = max(0, selling_price - total_cost) * 0.20
+        return customs_tax_payable + profit_tax
+    
+    elif tax_scheme == "USN":
+        usn6_tax = selling_price * 0.06
+        usn15_tax = max(0, selling_price - total_cost) * 0.15
+        
+        if usn6_tax < usn15_tax:
+            return customs_tax + usn6_tax
+        else:
+            return customs_tax + usn15_tax
+
+
+def monte_carlo_simulation(n_simulations=1_000_000, tax_scheme="OSNO"):
+    """
+    Метод Монте-Карло
+    
+    n_simulations - количество итераций метода Монте-Карло
+    tax_scheme - система налогообложения
+    """
+    
     # Фиксированные параметры
-    K0 = 3000           # Начальная стоимость сервера ($)
-    P = 400_000         # Стоимость продажи сервера (₽)
-    C_aviation = 120    # Стоимость авиадоставки ($)
-    C_sea = 50          # Стоимость морской доставки ($)
-    n = 12              # Начисление процентов раз в год
-    tax = 0.2           # Налог
-    T = 0.5             # Время до продажи в годах
-    usd_rate_now = 87.5 # Курс доллар в данный момент (₽)
+    buying_price = 3000         # Начальная стоимость сервера ($)
+    selling_price = 400_000     # Стоимость продажи сервера (₽)
+    delivery_price_avia = 120   # Стоимость авиадоставки ($)
+    delivery_price_sea = 50     # Стоимость морской доставки ($)
+    n = 12                      # Начисление процентов раз в год
+    T = 0.5                     # Время до продажи в годах
+    usd_rate_now = 87.5         # Текущий курс доллара (₽)
 
     usd_rate_first = np.random.normal(loc=usd_rate_now, scale=2.5)
     usd_rate_second = np.random.normal(loc=usd_rate_now, scale=2.5)
@@ -58,21 +104,19 @@ def monte_carlo_simulation(n_simulations=100000):
     # usd_rate_first = np.random.uniform(85, 92.5)
     # usd_rate_second = np.random.uniform(85, 92.5)
 
-    K0 *= usd_rate_first
-    C_aviation *= usd_rate_second
-    C_sea *= usd_rate_second
+    buying_price *= usd_rate_first
+    delivery_price_avia *= usd_rate_second
+    delivery_price_sea *= usd_rate_second
     
     critical_rates_avia = []
     critical_rates_sea = []
     
     for _ in range(n_simulations):
-        T_aviation = np.random.normal(loc=2, scale=0.5) / 52  # Среднее 2 недели, стандартное отклонение 0.5 недели
-        T_sea = np.random.normal(loc=12, scale=2) / 52        # Среднее 12 недель, стандартное отклонение 2 недели
+        delivery_time_avia = np.random.normal(loc=2, scale=0.5) / 52  # Среднее 2 недели, стандартное отклонение 0.5 недели
+        delivery_time_sea = np.random.normal(loc=12, scale=2) / 52    # Среднее 12 недель, стандартное отклонение 2 недели
         
-        customs_fee = get_customs_fee(P)
-        
-        r_crit_avia = calculate_critical_rate(K0, P, C_aviation, T_aviation, tax, customs_fee, n, T)
-        r_crit_sea = calculate_critical_rate(K0, P, C_sea, T_sea, tax, customs_fee, n, T)
+        r_crit_avia = calculate_critical_rate(buying_price, selling_price, delivery_price_avia, delivery_time_avia, tax_scheme, n, T)
+        r_crit_sea = calculate_critical_rate(buying_price, selling_price, delivery_price_sea, delivery_time_sea, tax_scheme, n, T)
         
         if r_crit_avia is not None and 0 < r_crit_avia < 1:
             critical_rates_avia.append(r_crit_avia)
