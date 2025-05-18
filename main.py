@@ -141,7 +141,7 @@ class FinanceApp:
         """
     
         if tax_scheme == "INDIVIDUAL":
-            profit_tax = max(0, selling_price - total_cost * 0.13)
+            profit_tax = max(0, selling_price - total_cost) * 0.13
             return customs_tax + profit_tax
         elif tax_scheme == "OSNO":
             customs_tax_payable = max(0, selling_price * 0.20 - customs_tax)
@@ -289,8 +289,8 @@ class FinanceApp:
         if rates_avia and rates_sea:
             fig3 = plt.Figure(figsize=(10, 5))
             ax3 = fig3.add_subplot(111)
-            ax3.hist(rates_avia, bins=50, color='red', edgecolor='black', density=True, label='Авиа')
-            ax3.hist(rates_sea, bins=50, color='blue', edgecolor='black', density=True, label='Море')
+            ax3.hist(rates_avia, bins=50, color='red', alpha = 0.5, edgecolor='black', density=True, label='Авиа')
+            ax3.hist(rates_sea, bins=50, color='blue', alpha = 0.5, edgecolor='black', density=True, label='Море')
             ax3.axvline(np.mean(rates_avia), color='darkred', linestyle='--')
             ax3.axvline(np.mean(rates_sea), color='darkblue', linestyle='--')
             ax3.set_title('Авиаперевозка vs Морская перевозка')
