@@ -6,6 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class FinanceApp:
     def __init__(self, root):
+        """Инициализация главного окна приложения"""
         self.root = root
         self.root.title("Анализ критической ставки")
         self.root.state('zoomed')
@@ -26,12 +27,13 @@ class FinanceApp:
         params = [
             ("Начальная стоимость сервера ($):", "3000"),
             ("Стоимость продажи сервера (₽):", "400000"),
-            ('Вес сервера (кг)', '50'),
-            ('Длина сервера (см)', '100'),
-            ('Ширина сервера (см)', '50'),
-            ('Высота сервера (см)', '10'),
+            ("Вес сервера (кг):", "50"),
+            ("Длина сервера (см):", "100"),
+            ("Ширина сервера (см):", "50"),
+            ("Высота сервера (см):", "10"),
+            ("Стоимость хранения (₽/мес):", "5000"),
             ("Количество начислений процентов в год:", "12"),
-            ("Время до продажи в годах:", "0.5"),
+            ("Время до продажи (месяцы):", "6"),
             ("Текущий курс доллара (₽):", "85"),
             ("Количество итераций:", "10000")
         ]
@@ -49,11 +51,16 @@ class FinanceApp:
         self.tax_scheme = ttk.Combobox(param_frame, values=["INDIVIDUAL", "OSNO", "USN"])
         self.tax_scheme.set("OSNO")
         self.tax_scheme.pack(fill=tk.X)
+
+        # Выбор тренда курса доллара
+        tk.Label(param_frame, text="Тренд курса доллара:").pack(anchor='w')
+        self.rate_trend = ttk.Combobox(param_frame, values=["Случайный", "Растёт", "Падает"],)
+        self.rate_trend.set("Случайный")
+        self.rate_trend.pack(fill=tk.X)
         
         # Кнопки
         button_frame = tk.Frame(left_frame)
         button_frame.pack(fill=tk.X, padx=5, pady=5)
-        
         tk.Button(button_frame, text="Рассчитать", command=self.run_analysis).pack(fill=tk.X)
         tk.Button(button_frame, text="Очистить", command=self.clear_results).pack(fill=tk.X)
 
@@ -70,19 +77,32 @@ class FinanceApp:
         self.canvas_sea = None
         self.canvas_compare = None
 
-    def calculate_shipping(self, method, weight, length, width, height):
-        volume_weight = (length * width * height) / 5000
+    def calculate_shipping_cost(self, method, weight, length, width, height):
+        """
+        Расчет стоимости доставки
+        
+        method - способ доставки
+        weight - вес сервера (кг)
+        length - длина сервера (см)
+        width - ширина сервера (см)
+        height - высота сервера (см)
+        """
+        volume_weight = (length * width * height) / 6000
 
         if method == 'sea':
-            volume_m3 = (length * width * height) / 6_000_000
+            volume_m3 = (length * width * height) / 1_000_000
             chargeable = max(weight / 1000, volume_m3)
-            return 105 * chargeable
+            return 75 * chargeable
         else:
             chargeable = max(weight, volume_weight)
-            return 2.7 * chargeable
+            return 3.5 * chargeable
 
     def get_customs_fee(self, value_rub):
-        """ Возвращает сумму таможенного сбора в зависимости от стоимости товара в рублях """
+        """
+        Расчет таможенного сбора
+        
+        value_rub - стоимость сервера и доставки (₽)
+        """
         if value_rub <= 200_000:
             return 1_067
         elif value_rub <= 450_000:
@@ -100,35 +120,39 @@ class FinanceApp:
         else:
             return 30_000
 
-    def calculate_critical_rate(self, buying_price, selling_price, delivery_price, delivery_time, tax_scheme, n, T):
+    def calculate_critical_rate(self, buying_price, selling_price, delivery_price, delivery_time, tax_scheme, n, T, storage_cost):
         """
         Вычисляет критическую банковскую ставку r_кр, при которой сделка безубыточна.
         
         buying_price - начальная стоимость сервера (₽)
         selling_price - стоимость продажи сервера (₽)
         delivery_price - стоимость доставки (₽)
-        delivery_time - время доставки
+        delivery_time - время доставки (недели)
         tax_scheme - система налогообложения
-        n - количество начислений процентов в год (по умолчанию 12)
-        T - время до продажи в годах
+        n - количество начислений процентов в год
+        T - время до продажи (месяцы)
+        storage_cost - стоимость хранения в месяц (₽)
         """
+        delivery_time_months = delivery_time / 4.345
+
+        total_months_until_sale = T
+        storage_time = max(0, total_months_until_sale - delivery_time_months)
+        storage_cost_total = storage_cost * storage_time
+        
+        total_time_years = (delivery_time_months + storage_time) / 12
 
         customs_fee = self.get_customs_fee(buying_price + delivery_price)
-
         customs_tax = (buying_price + delivery_price + customs_fee) * 0.20
         total_cost = buying_price + delivery_price + customs_tax
 
         tax = self.calculate_tax(selling_price, tax_scheme, customs_tax, total_cost)
-        # print("tax", tax, " customs_tax", customs_tax)
-        # quit()
-
-        additional_costs = delivery_price + tax
+        additional_costs = delivery_price + tax + storage_cost_total
 
         # Проверка на возможность прибыли
         if selling_price <= additional_costs:
             return None
         
-        return n * (((selling_price - additional_costs) / buying_price) ** (1 / (n * (T + delivery_time / 12))) - 1)
+        return n * (((selling_price - additional_costs) / buying_price) ** (1 / (n * total_time_years)) - 1)
     
     def calculate_tax(self, selling_price, tax_scheme, customs_tax, total_cost):
         """
@@ -151,6 +175,22 @@ class FinanceApp:
             usn6_tax = selling_price * 0.06
             usn15_tax = max(0, selling_price - total_cost) * 0.15
             return customs_tax + (usn6_tax if usn6_tax < usn15_tax else usn15_tax)
+        
+    def generate_usd_rate(self, base_rate, trend):
+        """
+        Генерация курса доллара с учетом тренда
+    
+        base_rate - базовый курс (₽)
+        trend - тренд ("Растёт", "Падает", "Случайный")
+        """
+        if trend == "Растёт":
+            drift = 0.05
+        elif trend == "Падает":
+            drift = -0.05
+        else:
+            drift = 0
+
+        return max(1, np.random.normal(base_rate * (1 + drift), 2.5))
 
     def run_analysis(self):
         """Запуск анализа и отображение результатов"""
@@ -163,11 +203,13 @@ class FinanceApp:
                 'length': float(self.entries["Длина сервера (см)"].get()),
                 'width': float(self.entries["Ширина сервера (см)"].get()),
                 'height': float(self.entries["Высота сервера (см)"].get()),
+                'storage_cost': float(self.entries["Стоимость хранения (₽/мес)"].get()),
                 'n': int(self.entries["Количество начислений процентов в год"].get()),
-                'T': float(self.entries["Время до продажи в годах"].get()),
+                'T': float(self.entries["Время до продажи (месяцы)"].get()),
                 'usd_rate': float(self.entries["Текущий курс доллара (₽)"].get()),
                 'n_simulations': int(self.entries["Количество итераций"].get()),
-                'tax_scheme': self.tax_scheme.get()
+                'tax_scheme': self.tax_scheme.get(),
+                'rate_trend': self.rate_trend.get()
             }
 
             # Запуск симуляции
@@ -186,32 +228,36 @@ class FinanceApp:
             self.result_text.insert(tk.END, f"Ошибка ввода данных: {str(e)}\n")
 
     def monte_carlo_simulation(self, params):
-        """Метод Монте-Карло"""
+        """
+        Метод Монте-Карло
+        
+        params - словарь с входными параметрами
+        """
         critical_rates_avia = []
         critical_rates_sea = []
         
         for _ in range(params['n_simulations']):
-            delivery_price_avia = self.calculate_shipping('air', params['weight'], params['length'], params['width'], params['height'])
-            delivery_price_sea = self.calculate_shipping('sea', params['weight'], params['length'], params['width'], params['height'])
+            delivery_price_avia = self.calculate_shipping_cost('air', params['weight'], params['length'], params['width'], params['height'])
+            delivery_price_sea = self.calculate_shipping_cost('sea', params['weight'], params['length'], params['width'], params['height'])
 
-            usd1 = np.random.normal(params['usd_rate'], 2.5)
-            usd2 = np.random.normal(params['usd_rate'], 2.5)
+            usd1 = self.generate_usd_rate(params['usd_rate'], params['rate_trend'])
+            usd2 = self.generate_usd_rate(params['usd_rate'], params['rate_trend'])
             
             buying_price = params['buying_price'] * usd1
             delivery_avia = delivery_price_avia * usd2
             delivery_sea = delivery_price_sea * usd2
             
-            time_avia = max(0.01, np.random.normal(2, 0.5)) / 52
-            time_sea = max(0.01, np.random.normal(12, 2)) / 52
+            time_avia = max(0.01, np.random.normal(2, 0.5))
+            time_sea = max(0.01, np.random.normal(12, 2))
             
             rate_avia = self.calculate_critical_rate(
                 buying_price, params['selling_price'], delivery_avia,
-                time_avia, params['tax_scheme'], params['n'], params['T']
+                time_avia, params['tax_scheme'], params['n'], params['T'], params['storage_cost']
             )
             
             rate_sea = self.calculate_critical_rate(
                 buying_price, params['selling_price'], delivery_sea,
-                time_sea, params['tax_scheme'], params['n'], params['T']
+                time_sea, params['tax_scheme'], params['n'], params['T'], params['storage_cost']
             )
             
             if rate_avia and 0 < rate_avia < 1:
@@ -222,8 +268,15 @@ class FinanceApp:
         return critical_rates_avia, critical_rates_sea
 
     def print_stats(self, rates_avia, rates_sea):
-        """Вывод статистики в текстовое поле"""
+        """
+        Вывод статистики в текстовое поле
+        
+        rates_avia - список ставок для авиадоставки
+        rates_sea - список ставок для морской доставки
+        """
+
         def get_stats(rates, name):
+            """Вспомогательная функция для форматирования статистики"""
             if not rates:
                 return f"{name}: Нет подходящих значений\n"
             
@@ -239,7 +292,12 @@ class FinanceApp:
         self.result_text.insert(tk.END, get_stats(rates_sea, "Морская перевозка"))
 
     def plot_results(self, rates_avia, rates_sea):
-        """Построение графиков"""
+        """
+        Построение графиков распределения критических ставок
+        
+        rates_avia - список ставок для авиадоставки
+        rates_sea - список ставок для морской доставки
+        """
         # Очистка предыдущих графиков
         for widget in self.right_frame.winfo_children():
             widget.destroy()
@@ -267,7 +325,6 @@ class FinanceApp:
             canvas1 = FigureCanvasTkAgg(fig1, top_frame)
             canvas1.get_tk_widget().pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
             self.canvas_avia = canvas1
-
         
         # График 2: Морская перевозка
         if rates_sea:
